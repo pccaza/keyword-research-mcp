@@ -1,0 +1,35 @@
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.coverage
+htmlcov/
+
+# Virtual environments and build output
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+google-ads.yaml
+google_ads.yaml
+*.pem
+*.key
+service-account*.json
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+
+.agents
+.claude
+CONTEXT.md
+docs
