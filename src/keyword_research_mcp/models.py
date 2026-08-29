@@ -18,14 +18,32 @@ class ResearchModel(BaseModel):
 
 
 class GenerateKeywordIdeasInput(ResearchModel):
-    """Validated input for Keyword Idea discovery."""
+    """Validated input for Keyword Idea discovery.
 
-    seed_topics: tuple[NonBlankString, ...] = Field(min_length=1)
+    Seed the search with ``seed_keywords`` (up to 20), a ``seed_url`` for a
+    single page, or a ``seed_site`` for a whole domain. ``seed_site`` cannot be
+    combined with the other two; ``seed_keywords`` and ``seed_url`` can.
+    """
+
+    seed_keywords: tuple[NonBlankString, ...] = Field(default=(), max_length=20)
+    seed_url: NonBlankString | None = None
+    seed_site: NonBlankString | None = None
     geo_target_resource_names: tuple[NonBlankString, ...] = Field(min_length=1)
     language_code: NonBlankString
+    min_avg_monthly_searches: int = Field(default=10, ge=0)
     page_size: int = Field(default=100, ge=1, le=1_000)
     cursor: NonBlankString | None = None
     refresh: bool = False
+
+    @model_validator(mode="after")
+    def validate_seeds(self) -> GenerateKeywordIdeasInput:
+        if not self.seed_keywords and self.seed_url is None and self.seed_site is None:
+            raise ValueError("provide seed_keywords, seed_url, or seed_site")
+        if self.seed_site is not None and (self.seed_keywords or self.seed_url):
+            raise ValueError(
+                "seed_site cannot be combined with seed_keywords or seed_url"
+            )
+        return self
 
 
 class HistoricalMetricsInput(ResearchModel):
@@ -184,47 +202,5 @@ class KeywordIdeaPage(ResearchModel):
     total_size: int | None
     has_more: bool
     next_cursor: str | None
-    research_context: ResearchContext
-    retrieved_at: datetime
-
-
-class KeywordCluster(ResearchModel):
-    """A group of keywords sharing one distinctive word."""
-
-    theme: str
-    total_monthly_searches: int
-    keywords: tuple[str, ...]
-
-
-class SeasonalPeak(ResearchModel):
-    """A keyword whose demand spikes in particular months."""
-
-    keyword: str
-    peak_months: tuple[int, ...]
-    peak_ratio: float
-
-
-class ContentIdeas(ResearchModel):
-    """Content angles derived from a keyword list, no ranking claims."""
-
-    questions: tuple[str, ...]
-    comparisons: tuple[str, ...]
-    commercial: tuple[str, ...]
-    clusters: tuple[KeywordCluster, ...]
-    seasonal_peaks: tuple[SeasonalPeak, ...]
-
-
-class KeywordExploration(ResearchModel):
-    """A one-call topic exploration: ranked keywords plus content angles."""
-
-    topic: str
-    location: str
-    language_code: str
-    keywords: tuple[KeywordRow, ...]
-    returned_count: int
-    total_size: int | None
-    has_more: bool
-    next_cursor: str | None
-    content_ideas: ContentIdeas
     research_context: ResearchContext
     retrieved_at: datetime

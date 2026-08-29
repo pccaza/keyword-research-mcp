@@ -67,7 +67,7 @@ def idea_request(
     seed: str = "keyword research", *, cursor: str | None = None, refresh: bool = False
 ) -> GenerateKeywordIdeasInput:
     return GenerateKeywordIdeasInput(
-        seed_topics=(seed,),
+        seed_keywords=(seed,),
         geo_target_resource_names=("geoTargetConstants/2840",),
         language_code="en",
         cursor=cursor,
@@ -75,23 +75,42 @@ def idea_request(
     )
 
 
-def test_keyword_ideas_reject_blank_seed_topics() -> None:
-    with pytest.raises(ValidationError, match="seed_topics"):
+def test_keyword_ideas_reject_blank_seed_keywords() -> None:
+    with pytest.raises(ValidationError, match="seed_keywords"):
         GenerateKeywordIdeasInput(
-            seed_topics=("  ",),
+            seed_keywords=("  ",),
             geo_target_resource_names=("geoTargetConstants/2840",),
             language_code="en",
         )
 
 
-def test_keyword_ideas_use_bounded_pagination_defaults() -> None:
+def test_keyword_ideas_require_at_least_one_seed() -> None:
+    with pytest.raises(ValidationError, match="seed_keywords, seed_url, or seed_site"):
+        GenerateKeywordIdeasInput(
+            geo_target_resource_names=("geoTargetConstants/2840",),
+            language_code="en",
+        )
+
+
+def test_keyword_ideas_reject_site_seed_combined_with_other_seeds() -> None:
+    with pytest.raises(ValidationError, match="seed_site cannot be combined"):
+        GenerateKeywordIdeasInput(
+            seed_keywords=("watercolor",),
+            seed_site="example.com",
+            geo_target_resource_names=("geoTargetConstants/2840",),
+            language_code="en",
+        )
+
+
+def test_keyword_ideas_use_bounded_pagination_and_volume_defaults() -> None:
     request = GenerateKeywordIdeasInput(
-        seed_topics=("local keyword research",),
+        seed_keywords=("local keyword research",),
         geo_target_resource_names=("geoTargetConstants/2840",),
         language_code="en",
     )
 
     assert request.page_size == 100
+    assert request.min_avg_monthly_searches == 10
     assert request.cursor is None
     assert request.refresh is False
 
@@ -99,7 +118,7 @@ def test_keyword_ideas_use_bounded_pagination_defaults() -> None:
 def test_keyword_ideas_reject_page_sizes_above_google_limit() -> None:
     with pytest.raises(ValidationError, match="page_size"):
         GenerateKeywordIdeasInput(
-            seed_topics=("local keyword research",),
+            seed_keywords=("local keyword research",),
             geo_target_resource_names=("geoTargetConstants/2840",),
             language_code="en",
             page_size=1001,
@@ -273,7 +292,7 @@ def test_keyword_ideas_normalize_evidence_and_fix_google_request_semantics() -> 
         ),
     )
     request = GenerateKeywordIdeasInput(
-        seed_topics=("keyword research",),
+        seed_keywords=("keyword research",),
         geo_target_resource_names=("geoTargetConstants/2840",),
         language_code="en",
     )
@@ -329,7 +348,7 @@ def test_lru_cache_evicts_the_least_recently_used_request() -> None:
     for seed in ("one", "two", "one", "three", "two"):
         asyncio.run(research.generate_keyword_ideas(idea_request(seed)))
 
-    assert [request.seed_topics for request in adapter.keyword_idea_requests] == [
+    assert [request.seed_keywords for request in adapter.keyword_idea_requests] == [
         ("one",),
         ("two",),
         ("three",),
@@ -499,17 +518,6 @@ def test_geo_resolution_is_cached_after_normalization() -> None:
     assert adapter.geo_suggestion_requests == [("Springfield", "US", "en")]
 
 
-def _us_country() -> AdapterGeoTarget:
-    return AdapterGeoTarget(
-        resource_name="geoTargetConstants/2840",
-        criterion_id=2840,
-        canonical_name="United States",
-        country_code="US",
-        target_type="Country",
-        status="ENABLED",
-    )
-
-
 def test_resolve_primary_geo_target_rejects_ambiguous_matches() -> None:
     adapter = FakeGoogleAdsAdapter(
         languages=english_adapter().languages,
@@ -537,38 +545,57 @@ def test_resolve_primary_geo_target_rejects_ambiguous_matches() -> None:
         asyncio.run(KeywordResearch(adapter).resolve_primary_geo_target("Springfield"))
 
 
-def test_explore_topic_ranks_keywords_and_attaches_content_ideas() -> None:
-    adapter = FakeGoogleAdsAdapter(
-        languages=english_adapter().languages,
-        geo_targets=(_us_country(),),
+def test_keyword_ideas_drop_low_volume_and_rank_by_search_volume() -> None:
+    adapter = english_adapter(
         keyword_idea_page=AdapterKeywordIdeaPage(
             items=(
                 AdapterKeywordRow(
-                    text="how to learn guitar",
+                    text="guitar chords",
                     close_variants=(),
                     metrics=AdapterKeywordMetrics(average_monthly_searches=400),
                 ),
                 AdapterKeywordRow(
-                    text="best guitar for beginners",
+                    text="obscure guitar tuning peg brand",
+                    close_variants=(),
+                    metrics=AdapterKeywordMetrics(average_monthly_searches=5),
+                ),
+                AdapterKeywordRow(
+                    text="learn guitar",
                     close_variants=(),
                     metrics=AdapterKeywordMetrics(average_monthly_searches=5000),
                 ),
             ),
-            total_size=2,
+            total_size=3,
             next_page_token=None,
         ),
     )
-
-    result = asyncio.run(KeywordResearch(adapter).explore_topic("guitar", limit=10))
-
-    assert [row.text for row in result.keywords] == [
-        "best guitar for beginners",
-        "how to learn guitar",
-    ]
-    assert result.content_ideas.questions == ("how to learn guitar",)
-    assert adapter.keyword_idea_requests[0].geo_target_resource_names == (
-        "geoTargetConstants/2840",
+    request = GenerateKeywordIdeasInput(
+        seed_keywords=("guitar",),
+        geo_target_resource_names=("geoTargetConstants/2840",),
+        language_code="en",
     )
+
+    result = asyncio.run(KeywordResearch(adapter).generate_keyword_ideas(request))
+
+    assert [row.text for row in result.items] == ["learn guitar", "guitar chords"]
+    assert result.returned_count == 2
+    assert result.total_size == 3
+
+
+def test_keyword_ideas_forward_url_and_site_seeds_to_the_adapter() -> None:
+    adapter = english_adapter()
+    request = GenerateKeywordIdeasInput(
+        seed_url="https://example.com/watercolor-guide",
+        geo_target_resource_names=("geoTargetConstants/2840",),
+        language_code="en",
+    )
+
+    asyncio.run(KeywordResearch(adapter).generate_keyword_ideas(request))
+
+    sent = adapter.keyword_idea_requests[0]
+    assert sent.seed_url == "https://example.com/watercolor-guide"
+    assert sent.seed_keywords == ()
+    assert sent.seed_site is None
 
 
 def test_historical_cache_key_includes_period_and_context_is_reproducible() -> None:

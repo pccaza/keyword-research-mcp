@@ -44,8 +44,13 @@ def _research() -> KeywordResearch:
                     close_variants=(),
                     metrics=AdapterKeywordMetrics(average_monthly_searches=2400),
                 ),
+                AdapterKeywordRow(
+                    text="keyword research spreadsheet template 2019",
+                    close_variants=(),
+                    metrics=AdapterKeywordMetrics(average_monthly_searches=4),
+                ),
             ),
-            total_size=2,
+            total_size=3,
             next_page_token=None,
         ),
     )
@@ -56,32 +61,36 @@ def test_server_registers_every_research_tool() -> None:
     tools = asyncio.run(create_server(_research()).list_tools())
 
     assert {tool.name for tool in tools} == {
-        "explore_keywords",
         "resolve_geo_targets",
         "generate_keyword_ideas",
         "get_keyword_historical_metrics",
     }
 
 
-def test_explore_keywords_tool_returns_ranked_keywords_and_content_ideas() -> None:
+def test_generate_keyword_ideas_tool_ranks_by_volume_and_drops_noise() -> None:
     server = create_server(_research())
 
     result = asyncio.run(
-        server.call_tool("explore_keywords", {"topic": "keyword research"})
+        server.call_tool(
+            "generate_keyword_ideas", {"seed_keywords": ["keyword research"]}
+        )
     )
 
     payload = result.structured_content
     assert payload is not None
-    assert [row["text"] for row in payload["keywords"]] == [
+    assert [row["text"] for row in payload["items"]] == [
         "best keyword research tool",
         "how to do keyword research",
     ]
-    assert "how to do keyword research" in payload["content_ideas"]["questions"]
-    assert "best keyword research tool" in payload["content_ideas"]["commercial"]
+    assert payload["returned_count"] == 2
 
 
-def test_explore_keywords_tool_reports_domain_errors_as_tool_errors() -> None:
+def test_generate_keyword_ideas_tool_reports_domain_errors_as_tool_errors() -> None:
     server = create_server(KeywordResearch(FakeGoogleAdsAdapter()))
 
     with pytest.raises(ToolError, match="no Google Ads location matched"):
-        asyncio.run(server.call_tool("explore_keywords", {"topic": "keyword research"}))
+        asyncio.run(
+            server.call_tool(
+                "generate_keyword_ideas", {"seed_keywords": ["keyword research"]}
+            )
+        )

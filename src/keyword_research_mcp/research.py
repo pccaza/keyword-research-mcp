@@ -13,7 +13,6 @@ from secrets import token_urlsafe
 from time import monotonic
 from typing import Generic, TypeVar, cast
 
-from keyword_research_mcp.content_ideas import build_content_ideas
 from keyword_research_mcp.errors import (
     InvalidCursor,
     InvalidResearchInput,
@@ -39,7 +38,6 @@ from keyword_research_mcp.models import (
     GeoTargetParent,
     HistoricalMetricsInput,
     HistoricalMetricsResult,
-    KeywordExploration,
     KeywordIdeaPage,
     KeywordMetrics,
     KeywordRow,
@@ -265,7 +263,12 @@ class KeywordResearch:
     async def generate_keyword_ideas(
         self, request: GenerateKeywordIdeasInput
     ) -> KeywordIdeaPage:
-        """Discover and normalize a bounded page of Keyword Ideas."""
+        """Discover and normalize a bounded page of Keyword Ideas.
+
+        Ideas are returned most-searched first. Ideas whose average monthly
+        searches fall below ``min_avg_monthly_searches`` are dropped before the
+        page is built; ``total_size`` stays Google's pre-filter estimate.
+        """
         fingerprint = self._idea_fingerprint(request)
         page_token: str | None = None
         if request.cursor is not None:
@@ -289,7 +292,9 @@ class KeywordResearch:
         page = await self._call_with_retry(
             lambda: self._adapter.generate_keyword_ideas(
                 AdapterGenerateKeywordIdeasRequest(
-                    seed_topics=request.seed_topics,
+                    seed_keywords=request.seed_keywords,
+                    seed_url=request.seed_url,
+                    seed_site=request.seed_site,
                     geo_target_resource_names=request.geo_target_resource_names,
                     language_resource_name=language_resource_name,
                     page_size=request.page_size,
@@ -308,12 +313,20 @@ class KeywordResearch:
             while len(self._cursors) > self._cursor_capacity:
                 self._cursors.popitem(last=False)
         items = tuple(
-            KeywordRow(
-                text=row.text,
-                close_variants=row.close_variants,
-                metrics=_normalize_metrics(row.metrics, currency_code),
+            sorted(
+                (
+                    KeywordRow(
+                        text=row.text,
+                        close_variants=row.close_variants,
+                        metrics=_normalize_metrics(row.metrics, currency_code),
+                    )
+                    for row in page.items
+                    if (row.metrics.average_monthly_searches or 0)
+                    >= request.min_avg_monthly_searches
+                ),
+                key=lambda row: row.metrics.average_monthly_searches or 0,
+                reverse=True,
             )
-            for row in page.items
         )
         result = KeywordIdeaPage(
             items=items,
@@ -363,61 +376,6 @@ class KeywordResearch:
                 f"location or a country_code. Candidates: {options}"
             )
         return chosen.resource_name
-
-    async def explore_topic(
-        self,
-        topic: str,
-        *,
-        location: str = "United States",
-        language_code: str = "en",
-        country_code: str | None = None,
-        limit: int = 50,
-        cursor: str | None = None,
-        refresh: bool = False,
-    ) -> KeywordExploration:
-        """Discover keywords for a topic and derive content angles in one call.
-
-        Locations and languages are given as plain text; they are resolved to
-        Google Ads targets internally. Keywords are returned most-searched first.
-        """
-        stripped_topic = topic.strip()
-        if not stripped_topic:
-            raise InvalidResearchInput("topic must not be blank")
-        if limit < 1:
-            raise InvalidResearchInput("limit must be positive")
-        geo_target_resource_name = await self.resolve_primary_geo_target(
-            location, country_code=country_code
-        )
-        page = await self.generate_keyword_ideas(
-            GenerateKeywordIdeasInput(
-                seed_topics=(stripped_topic,),
-                geo_target_resource_names=(geo_target_resource_name,),
-                language_code=language_code,
-                page_size=min(max(limit, 1), 1_000),
-                cursor=cursor,
-                refresh=refresh,
-            )
-        )
-        ranked = tuple(
-            sorted(
-                page.items,
-                key=lambda row: row.metrics.average_monthly_searches or 0,
-                reverse=True,
-            )[:limit]
-        )
-        return KeywordExploration(
-            topic=stripped_topic,
-            location=location,
-            language_code=language_code,
-            keywords=ranked,
-            returned_count=len(ranked),
-            total_size=page.total_size,
-            has_more=page.has_more,
-            next_cursor=page.next_cursor,
-            content_ideas=build_content_ideas(page.items),
-            research_context=page.research_context,
-            retrieved_at=page.retrieved_at,
-        )
 
     async def _resolve_language_resource_name(self, language_code: str) -> str:
         cached = self._language_resource_names.get(language_code)
@@ -491,11 +449,14 @@ class KeywordResearch:
     def _idea_fingerprint(self, request: GenerateKeywordIdeasInput) -> CacheKey:
         return (
             self._customer_cache_key,
-            request.seed_topics,
+            request.seed_keywords,
+            request.seed_url,
+            request.seed_site,
             request.geo_target_resource_names,
             request.language_code,
             "GOOGLE_SEARCH",
             False,
+            request.min_avg_monthly_searches,
             request.page_size,
         )
 

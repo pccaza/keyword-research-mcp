@@ -1,27 +1,29 @@
 # Keyword Research MCP
 
-Keyword Research MCP is a lightweight local MCP server for retrieving and
-normalizing Google Ads keyword-planning evidence, built so that an agent can
-explore a topic in a single call.
+Keyword Research MCP is a lightweight local MCP server that connects an agent to
+real Google Ads keyword-planning data — search volume, monthly volumes, paid
+competition, and bid ranges — normalized into stable, typed shapes. It fetches
+and normalizes; it does not score, cluster, or label keywords.
 
 ## Tools
 
-- `explore_keywords` — the fast path. Give a `topic` (and optionally a
-  plain-text `location`, default `United States`, and `language_code`, default
-  `en`). Returns the most-searched keywords for the topic plus derived content
-  angles: question phrases, comparison phrases, commercial-intent phrases,
-  topical clusters, and seasonal demand peaks. Paginate with `cursor`.
+- `generate_keyword_ideas` — discover keywords. Seed with `seed_keywords` (up to
+  20), a `seed_url` (one page), or a `seed_site` (a whole domain); `seed_site`
+  cannot be combined with the others. Give a plain-text `location` (default
+  `United States`) and `language_code` (default `en`), or explicit
+  `geo_target_resource_names`. Ideas come back most-searched first; ideas below
+  `min_avg_monthly_searches` (default `10`) are dropped before the page is
+  built, so `total_size` stays Google's pre-filter estimate. Paginate with
+  `cursor`.
 - `resolve_geo_targets` — list every plausible Google Ads location for a
   human-readable query when you need to pin down an exact target.
-- `generate_keyword_ideas` — a bounded page of Keyword Ideas for one or more
-  seed topics; accepts a plain-text `location` or explicit
-  `geo_target_resource_names`.
 - `get_keyword_historical_metrics` — enrich an existing keyword list with
   average monthly searches, monthly volumes, paid competition, and bid ranges.
 
-Paid Competition in Google Ads describes advertiser activity. This project does
-not present it as organic ranking difficulty and does not calculate a composite
-keyword score.
+Search volume is real Google demand data. Paid Competition in Google Ads
+describes advertiser activity; this project does not present it as organic
+ranking difficulty and calculates no composite keyword score. Phrase grouping
+and intent classification are left to the calling agent.
 
 ## Requirements
 
@@ -90,10 +92,13 @@ Run the same quality gate used in CI:
 ```console
 uv run ruff format --check .
 uv run ruff check .
-uv run pyright
 uv run pytest
 uv build
 ```
+
+`pyright` is configured but not part of the gate: the `mcp` 2.x server SDK
+registers tools through decorators that pyright's strict mode reports as unused,
+so it produces false positives here.
 
 See [the implementation plan](docs/implementation-plan.md) for the intended tool
 contracts, architecture, delivery phases, and product boundaries.

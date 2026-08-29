@@ -317,7 +317,7 @@ def test_keyword_ideas_return_only_the_requested_v25_page() -> None:
     page = asyncio.run(
         adapter.generate_keyword_ideas(
             AdapterGenerateKeywordIdeasRequest(
-                seed_topics=("keyword research", "content research"),
+                seed_keywords=("keyword research", "content research"),
                 geo_target_resource_names=("geoTargetConstants/2840",),
                 language_resource_name="languageConstants/1000",
                 page_size=100,
@@ -336,6 +336,51 @@ def test_keyword_ideas_return_only_the_requested_v25_page() -> None:
     assert sent.page_token == "google-current-page-token"
     assert sent.keyword_plan_network.name == "GOOGLE_SEARCH"
     assert sent.include_adult_keywords is False
+
+
+def _sent_idea_request(
+    request: AdapterGenerateKeywordIdeasRequest,
+) -> GenerateKeywordIdeasRequest:
+    keyword_service = FakeKeywordPlanIdeaService(
+        idea_response=GenerateKeywordIdeaResponse()
+    )
+    adapter = GoogleAdsAdapter(
+        customer_id="1234567890",
+        services=GoogleAdsServices(
+            geo_target_constant=cast(GeoTargetConstantServicePort, object()),
+            keyword_plan_idea=cast(KeywordPlanIdeaServicePort, keyword_service),
+            google_ads=cast(GoogleAdsServicePort, object()),
+        ),
+    )
+    asyncio.run(adapter.generate_keyword_ideas(request))
+    return keyword_service.idea_requests[0]
+
+
+def test_keyword_ideas_send_url_site_and_combined_seeds() -> None:
+    base = {
+        "geo_target_resource_names": ("geoTargetConstants/2840",),
+        "language_resource_name": "languageConstants/1000",
+        "page_size": 100,
+    }
+
+    url_only = _sent_idea_request(
+        AdapterGenerateKeywordIdeasRequest(seed_url="https://example.com/guide", **base)
+    )
+    assert url_only.url_seed.url == "https://example.com/guide"
+    assert "keyword_seed" not in url_only
+
+    site_only = _sent_idea_request(
+        AdapterGenerateKeywordIdeasRequest(seed_site="example.com", **base)
+    )
+    assert site_only.site_seed.site == "example.com"
+
+    combined = _sent_idea_request(
+        AdapterGenerateKeywordIdeasRequest(
+            seed_keywords=("watercolor",), seed_url="https://example.com", **base
+        )
+    )
+    assert combined.keyword_and_url_seed.url == "https://example.com"
+    assert combined.keyword_and_url_seed.keywords == ["watercolor"]
 
 
 def test_production_adapter_constructs_explicit_v25_google_client(

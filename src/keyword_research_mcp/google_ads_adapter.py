@@ -129,10 +129,12 @@ class AdapterHistoricalMetricsRequest:
 
 @dataclass(frozen=True, slots=True)
 class AdapterGenerateKeywordIdeasRequest:
-    seed_topics: tuple[str, ...]
     geo_target_resource_names: tuple[str, ...]
     language_resource_name: str
     page_size: int
+    seed_keywords: tuple[str, ...] = ()
+    seed_url: str | None = None
+    seed_site: str | None = None
     page_token: str | None = None
     network: Literal["GOOGLE_SEARCH"] = "GOOGLE_SEARCH"
     include_adult_keywords: bool = False
@@ -380,8 +382,8 @@ class GoogleAdsAdapter:
             include_adult_keywords=request.include_adult_keywords,
             page_size=request.page_size,
             keyword_plan_network=request.network,
-            keyword_seed={"keywords": request.seed_topics},
         )
+        _apply_keyword_idea_seed(google_request, request)
         if request.page_token is not None:
             google_request.page_token = request.page_token
         pager = _call_google(
@@ -407,6 +409,26 @@ class GoogleAdsAdapter:
             total_size=response.total_size,
             next_page_token=response.next_page_token or None,
         )
+
+
+def _apply_keyword_idea_seed(
+    google_request: GenerateKeywordIdeasRequest,
+    request: AdapterGenerateKeywordIdeasRequest,
+) -> None:
+    """Set the request's seed oneof from the adapter request.
+
+    ``site_seed`` is exclusive; ``url_seed`` and ``keyword_seed`` combine into
+    ``keyword_and_url_seed`` when both are given.
+    """
+    if request.seed_site is not None:
+        google_request.site_seed.site = request.seed_site
+    elif request.seed_url is not None and request.seed_keywords:
+        google_request.keyword_and_url_seed.url = request.seed_url
+        google_request.keyword_and_url_seed.keywords.extend(request.seed_keywords)
+    elif request.seed_url is not None:
+        google_request.url_seed.url = request.seed_url
+    else:
+        google_request.keyword_seed.keywords.extend(request.seed_keywords)
 
 
 def _criterion_id(target: GeoTargetConstant) -> int:

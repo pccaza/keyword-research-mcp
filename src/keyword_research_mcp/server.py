@@ -17,10 +17,13 @@ from keyword_research_mcp.models import (
 from keyword_research_mcp.research import KeywordResearch
 
 _INSTRUCTIONS = (
-    "Retrieve and normalize Google Ads keyword-planning evidence. Start with "
-    "explore_keywords for a topic: it resolves plain-text locations, returns the "
-    "most-searched keywords, and groups them into content angles. Paid "
-    "Competition describes advertiser activity, not organic ranking difficulty."
+    "Fetch normalized Google Ads keyword-planning data. Use "
+    "generate_keyword_ideas to discover keywords from seed terms, a page URL, "
+    "or a whole site; resolve_geo_targets to pin an exact location; and "
+    "get_keyword_historical_metrics to enrich a known keyword list. Search "
+    "volume is real Google demand data. Paid Competition describes advertiser "
+    "activity, not organic ranking difficulty; this server computes no keyword "
+    "score and leaves phrase grouping and intent labelling to the caller."
 )
 
 
@@ -47,36 +50,6 @@ def create_server(research: KeywordResearch | None = None) -> MCPServer:
 
     @server.tool(
         description=(
-            "Explore a topic end to end: resolve the location, return the "
-            "most-searched keywords, and derive content angles (questions, "
-            "comparisons, commercial intent, topical clusters, seasonal peaks)."
-        )
-    )
-    async def explore_keywords(
-        topic: str,
-        location: str = "United States",
-        language_code: str = "en",
-        country_code: str | None = None,
-        limit: int = 50,
-        cursor: str | None = None,
-        refresh: bool = False,
-    ) -> dict[str, object]:
-        try:
-            result = await get_research().explore_topic(
-                topic,
-                location=location,
-                language_code=language_code,
-                country_code=country_code,
-                limit=limit,
-                cursor=cursor,
-                refresh=refresh,
-            )
-        except KeywordResearchError as error:
-            raise ValueError(str(error)) from error
-        return result.model_dump(mode="json")
-
-    @server.tool(
-        description=(
             "List every plausible Google Ads location for a human-readable "
             "query, with parents, so the caller can pick a resource name."
         )
@@ -96,17 +69,23 @@ def create_server(research: KeywordResearch | None = None) -> MCPServer:
 
     @server.tool(
         description=(
-            "Discover a bounded page of Keyword Ideas for one or more seed "
-            "topics. Give a plain-text location, or explicit geo target "
-            "resource names for full control."
+            "Fetch a page of Google Ads Keyword Ideas. Seed with seed_keywords "
+            "(up to 20), a seed_url (one page), or a seed_site (a whole "
+            "domain). Results come back most-searched first with ideas below "
+            "min_avg_monthly_searches (default 10) removed. Give a plain-text "
+            "location, or explicit geo target resource names for full control. "
+            "Paginate with cursor."
         )
     )
     async def generate_keyword_ideas(
-        seed_topics: list[str],
+        seed_keywords: list[str] | None = None,
+        seed_url: str | None = None,
+        seed_site: str | None = None,
         location: str = "United States",
         language_code: str = "en",
         country_code: str | None = None,
         geo_target_resource_names: list[str] | None = None,
+        min_avg_monthly_searches: int = 10,
         page_size: int = 100,
         cursor: str | None = None,
         refresh: bool = False,
@@ -120,9 +99,12 @@ def create_server(research: KeywordResearch | None = None) -> MCPServer:
             ]
             result = await research.generate_keyword_ideas(
                 GenerateKeywordIdeasInput(
-                    seed_topics=tuple(seed_topics),
+                    seed_keywords=tuple(seed_keywords or ()),
+                    seed_url=seed_url,
+                    seed_site=seed_site,
                     geo_target_resource_names=tuple(geo_targets),
                     language_code=language_code,
+                    min_avg_monthly_searches=min_avg_monthly_searches,
                     page_size=page_size,
                     cursor=cursor,
                     refresh=refresh,
