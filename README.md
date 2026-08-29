@@ -108,9 +108,6 @@ uv build
 registers tools through decorators that pyright's strict mode reports as unused,
 so it produces false positives here.
 
-See [the implementation plan](docs/implementation-plan.md) for the intended tool
-contracts, architecture, delivery phases, and product boundaries.
-
 ## License
 
 MIT
