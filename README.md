@@ -85,6 +85,14 @@ uv run keyword-research-mcp
 The command runs over `stdio`, so it waits silently for an MCP client and writes
 protocol messages only to standard output.
 
+## Agent skill
+
+[`skills/keyword-research/SKILL.md`](skills/keyword-research/SKILL.md) is a
+ready-to-use skill that drives these tools: it takes a niche to a shortlist of
+keywords worth planning content around, with sensible defaults meant to be
+refined per use case. Copy the `skills/keyword-research/` directory into your
+agent's skills directory (for Claude Code, `.claude/skills/`).
+
 ## Development
 
 Run the same quality gate used in CI:
