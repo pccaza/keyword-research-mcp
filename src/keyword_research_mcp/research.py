@@ -11,8 +11,9 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from secrets import token_urlsafe
 from time import monotonic
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, cast
 
+from keyword_research_mcp.content_ideas import build_content_ideas
 from keyword_research_mcp.errors import (
     InvalidCursor,
     InvalidResearchInput,
@@ -38,6 +39,7 @@ from keyword_research_mcp.models import (
     GeoTargetParent,
     HistoricalMetricsInput,
     HistoricalMetricsResult,
+    KeywordExploration,
     KeywordIdeaPage,
     KeywordMetrics,
     KeywordRow,
@@ -129,7 +131,8 @@ class KeywordResearch:
         self._adapter = adapter
         self._customer_cache_key = customer_cache_key
         self._cache: _LruCache[object] = _LruCache(cache_capacity)
-        self._cursors: dict[str, _CursorState] = {}
+        self._cursors: OrderedDict[str, _CursorState] = OrderedDict()
+        self._cursor_capacity = max(cache_capacity, 64)
         self._language_resource_names: dict[str, str] = {}
         self._currency_code: str | None = None
         self._limiter = _RateLimiter(clock=clock, sleep=sleep)
@@ -302,6 +305,8 @@ class KeywordResearch:
                 page_token=page.next_page_token,
                 request_fingerprint=fingerprint,
             )
+            while len(self._cursors) > self._cursor_capacity:
+                self._cursors.popitem(last=False)
         items = tuple(
             KeywordRow(
                 text=row.text,
@@ -325,6 +330,94 @@ class KeywordResearch:
         )
         self._cache.put(cache_key, result)
         return result
+
+    async def resolve_primary_geo_target(
+        self,
+        location: str,
+        *,
+        country_code: str | None = None,
+        locale: str | None = None,
+    ) -> str:
+        """Resolve a human-readable location to exactly one resource name.
+
+        Raises ``InvalidTargeting`` when nothing matches or the match is
+        ambiguous, listing the candidates so the caller can disambiguate.
+        """
+        matches = await self.resolve_geo_targets(
+            location, country_code=country_code, locale=locale
+        )
+        candidates = [
+            match for match in matches.matches if match.status == "ENABLED"
+        ] or list(matches.matches)
+        if not candidates:
+            raise InvalidTargeting(f"no Google Ads location matched {location!r}")
+        wanted = location.strip().casefold()
+        exact = [
+            match for match in candidates if match.canonical_name.casefold() == wanted
+        ]
+        chosen = exact[0] if exact else candidates[0] if len(candidates) == 1 else None
+        if chosen is None:
+            options = "; ".join(match.canonical_name for match in candidates[:8])
+            raise InvalidTargeting(
+                f"{location!r} matched several locations; pass a more specific "
+                f"location or a country_code. Candidates: {options}"
+            )
+        return chosen.resource_name
+
+    async def explore_topic(
+        self,
+        topic: str,
+        *,
+        location: str = "United States",
+        language_code: str = "en",
+        country_code: str | None = None,
+        limit: int = 50,
+        cursor: str | None = None,
+        refresh: bool = False,
+    ) -> KeywordExploration:
+        """Discover keywords for a topic and derive content angles in one call.
+
+        Locations and languages are given as plain text; they are resolved to
+        Google Ads targets internally. Keywords are returned most-searched first.
+        """
+        stripped_topic = topic.strip()
+        if not stripped_topic:
+            raise InvalidResearchInput("topic must not be blank")
+        if limit < 1:
+            raise InvalidResearchInput("limit must be positive")
+        geo_target_resource_name = await self.resolve_primary_geo_target(
+            location, country_code=country_code
+        )
+        page = await self.generate_keyword_ideas(
+            GenerateKeywordIdeasInput(
+                seed_topics=(stripped_topic,),
+                geo_target_resource_names=(geo_target_resource_name,),
+                language_code=language_code,
+                page_size=min(max(limit, 1), 1_000),
+                cursor=cursor,
+                refresh=refresh,
+            )
+        )
+        ranked = tuple(
+            sorted(
+                page.items,
+                key=lambda row: row.metrics.average_monthly_searches or 0,
+                reverse=True,
+            )[:limit]
+        )
+        return KeywordExploration(
+            topic=stripped_topic,
+            location=location,
+            language_code=language_code,
+            keywords=ranked,
+            returned_count=len(ranked),
+            total_size=page.total_size,
+            has_more=page.has_more,
+            next_cursor=page.next_cursor,
+            content_ideas=build_content_ideas(page.items),
+            research_context=page.research_context,
+            retrieved_at=page.retrieved_at,
+        )
 
     async def _resolve_language_resource_name(self, language_code: str) -> str:
         cached = self._language_resource_names.get(language_code)
@@ -445,13 +538,9 @@ def _normalize_metrics(
 
 
 def _normalize_competition(value: str | None) -> PaidCompetition | None:
-    if value not in _KNOWN_COMPETITION:
-        return None
-    if value == "LOW":
-        return "LOW"
-    if value == "MEDIUM":
-        return "MEDIUM"
-    return "HIGH"
+    if value in _KNOWN_COMPETITION:
+        return cast(PaidCompetition, value)
+    return None
 
 
 def _money(micros: int | None, currency_code: str) -> Money | None:

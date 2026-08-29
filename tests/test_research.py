@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from keyword_research_mcp.errors import (
     InvalidCursor,
     InvalidResearchInput,
+    InvalidTargeting,
     RateLimitExhausted,
     UpstreamGoogleAdsError,
 )
@@ -496,6 +497,78 @@ def test_geo_resolution_is_cached_after_normalization() -> None:
     assert first.research_context.locale == "en"
     assert first.retrieved_at == retrieved_at
     assert adapter.geo_suggestion_requests == [("Springfield", "US", "en")]
+
+
+def _us_country() -> AdapterGeoTarget:
+    return AdapterGeoTarget(
+        resource_name="geoTargetConstants/2840",
+        criterion_id=2840,
+        canonical_name="United States",
+        country_code="US",
+        target_type="Country",
+        status="ENABLED",
+    )
+
+
+def test_resolve_primary_geo_target_rejects_ambiguous_matches() -> None:
+    adapter = FakeGoogleAdsAdapter(
+        languages=english_adapter().languages,
+        geo_targets=(
+            AdapterGeoTarget(
+                resource_name="geoTargetConstants/1",
+                criterion_id=1,
+                canonical_name="Springfield, Illinois, United States",
+                country_code="US",
+                target_type="City",
+                status="ENABLED",
+            ),
+            AdapterGeoTarget(
+                resource_name="geoTargetConstants/2",
+                criterion_id=2,
+                canonical_name="Springfield, Missouri, United States",
+                country_code="US",
+                target_type="City",
+                status="ENABLED",
+            ),
+        ),
+    )
+
+    with pytest.raises(InvalidTargeting, match="matched several locations"):
+        asyncio.run(KeywordResearch(adapter).resolve_primary_geo_target("Springfield"))
+
+
+def test_explore_topic_ranks_keywords_and_attaches_content_ideas() -> None:
+    adapter = FakeGoogleAdsAdapter(
+        languages=english_adapter().languages,
+        geo_targets=(_us_country(),),
+        keyword_idea_page=AdapterKeywordIdeaPage(
+            items=(
+                AdapterKeywordRow(
+                    text="how to learn guitar",
+                    close_variants=(),
+                    metrics=AdapterKeywordMetrics(average_monthly_searches=400),
+                ),
+                AdapterKeywordRow(
+                    text="best guitar for beginners",
+                    close_variants=(),
+                    metrics=AdapterKeywordMetrics(average_monthly_searches=5000),
+                ),
+            ),
+            total_size=2,
+            next_page_token=None,
+        ),
+    )
+
+    result = asyncio.run(KeywordResearch(adapter).explore_topic("guitar", limit=10))
+
+    assert [row.text for row in result.keywords] == [
+        "best guitar for beginners",
+        "how to learn guitar",
+    ]
+    assert result.content_ideas.questions == ("how to learn guitar",)
+    assert adapter.keyword_idea_requests[0].geo_target_resource_names == (
+        "geoTargetConstants/2840",
+    )
 
 
 def test_historical_cache_key_includes_period_and_context_is_reproducible() -> None:

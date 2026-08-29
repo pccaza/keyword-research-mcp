@@ -1,10 +1,23 @@
 # Keyword Research MCP
 
 Keyword Research MCP is a lightweight local MCP server for retrieving and
-normalizing Google Ads keyword-planning evidence. It is under active development;
-the current repository contains the executable project foundation plus the typed,
-tested research interface and production Google Ads adapter. MCP tool
-registration described in the implementation plan is still being built.
+normalizing Google Ads keyword-planning evidence, built so that an agent can
+explore a topic in a single call.
+
+## Tools
+
+- `explore_keywords` — the fast path. Give a `topic` (and optionally a
+  plain-text `location`, default `United States`, and `language_code`, default
+  `en`). Returns the most-searched keywords for the topic plus derived content
+  angles: question phrases, comparison phrases, commercial-intent phrases,
+  topical clusters, and seasonal demand peaks. Paginate with `cursor`.
+- `resolve_geo_targets` — list every plausible Google Ads location for a
+  human-readable query when you need to pin down an exact target.
+- `generate_keyword_ideas` — a bounded page of Keyword Ideas for one or more
+  seed topics; accepts a plain-text `location` or explicit
+  `geo_target_resource_names`.
+- `get_keyword_historical_metrics` — enrich an existing keyword list with
+  average monthly searches, monthly volumes, paid competition, and bid ranges.
 
 Paid Competition in Google Ads describes advertiser activity. This project does
 not present it as organic ranking difficulty and does not calculate a composite

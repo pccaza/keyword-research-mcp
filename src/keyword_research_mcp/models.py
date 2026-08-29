@@ -186,3 +186,45 @@ class KeywordIdeaPage(ResearchModel):
     next_cursor: str | None
     research_context: ResearchContext
     retrieved_at: datetime
+
+
+class KeywordCluster(ResearchModel):
+    """A group of keywords sharing one distinctive word."""
+
+    theme: str
+    total_monthly_searches: int
+    keywords: tuple[str, ...]
+
+
+class SeasonalPeak(ResearchModel):
+    """A keyword whose demand spikes in particular months."""
+
+    keyword: str
+    peak_months: tuple[int, ...]
+    peak_ratio: float
+
+
+class ContentIdeas(ResearchModel):
+    """Content angles derived from a keyword list, no ranking claims."""
+
+    questions: tuple[str, ...]
+    comparisons: tuple[str, ...]
+    commercial: tuple[str, ...]
+    clusters: tuple[KeywordCluster, ...]
+    seasonal_peaks: tuple[SeasonalPeak, ...]
+
+
+class KeywordExploration(ResearchModel):
+    """A one-call topic exploration: ranked keywords plus content angles."""
+
+    topic: str
+    location: str
+    language_code: str
+    keywords: tuple[KeywordRow, ...]
+    returned_count: int
+    total_size: int | None
+    has_more: bool
+    next_cursor: str | None
+    content_ideas: ContentIdeas
+    research_context: ResearchContext
+    retrieved_at: datetime
