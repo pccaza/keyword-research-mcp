@@ -52,9 +52,9 @@ class ServiceAccountConfig:
 class GoogleAdsConfig:
     """Validated process configuration for one target customer."""
 
-    developer_token: str = field(repr=False)
     customer_id: str = field(repr=False)
     authentication: UserOAuthConfig | ServiceAccountConfig
+    developer_token: str | None = field(default=None, repr=False)
     login_customer_id: str | None = field(default=None, repr=False)
     cache_capacity: int = 128
     log_level: str = "INFO"
@@ -95,7 +95,7 @@ def load_config(
             refresh_token=_required(values, "GOOGLE_ADS_REFRESH_TOKEN"),
         )
     return GoogleAdsConfig(
-        developer_token=_required(values, "GOOGLE_ADS_DEVELOPER_TOKEN"),
+        developer_token=values.get("GOOGLE_ADS_DEVELOPER_TOKEN", "").strip() or None,
         customer_id=_normalize_customer_id(
             _required(values, "GOOGLE_ADS_CUSTOMER_ID"),
             "GOOGLE_ADS_CUSTOMER_ID",

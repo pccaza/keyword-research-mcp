@@ -202,7 +202,9 @@ class GoogleAdsAdapter:
     def from_config(cls, config: GoogleAdsConfig) -> "GoogleAdsAdapter":
         """Construct the production services using the official v25 client."""
         client_values: dict[str, str | bool] = {
-            "developer_token": config.developer_token,
+            # Google ignores the value since the 2026-09-09 sunset, but the API still
+            # rejects a missing or empty header.
+            "developer_token": config.developer_token or "unused",
             "use_proto_plus": True,
         }
         if config.login_customer_id is not None:

@@ -42,7 +42,7 @@ method. Customer IDs may contain hyphens; they are normalized in memory.
 For user OAuth, set:
 
 ```console
-export GOOGLE_ADS_DEVELOPER_TOKEN="developer-token-placeholder"
+export GOOGLE_ADS_DEVELOPER_TOKEN="developer-token-placeholder" # optional, ignored by Google
 export GOOGLE_ADS_CUSTOMER_ID="123-456-7890"
 export GOOGLE_ADS_LOGIN_CUSTOMER_ID="987-654-3210" # optional manager account
 export GOOGLE_ADS_CLIENT_ID="client-id-placeholder"
@@ -53,7 +53,7 @@ export GOOGLE_ADS_REFRESH_TOKEN="refresh-token-placeholder"
 For a service account, omit the three user-OAuth settings and set:
 
 ```console
-export GOOGLE_ADS_DEVELOPER_TOKEN="developer-token-placeholder"
+export GOOGLE_ADS_DEVELOPER_TOKEN="developer-token-placeholder" # optional, ignored by Google
 export GOOGLE_ADS_CUSTOMER_ID="123-456-7890"
 export GOOGLE_ADS_JSON_KEY_FILE_PATH="/path/to/service-account.json"
 export GOOGLE_ADS_IMPERSONATED_EMAIL="ads-user@example.test" # optional
@@ -63,7 +63,7 @@ Alternatively, point `GOOGLE_ADS_CONFIGURATION_FILE_PATH` at a local
 `google-ads.yaml`:
 
 ```yaml
-developer_token: developer-token-placeholder
+developer_token: developer-token-placeholder # optional, ignored by Google
 customer_id: "123-456-7890"
 login_customer_id: "987-654-3210"
 client_id: client-id-placeholder

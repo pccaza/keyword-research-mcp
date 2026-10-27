@@ -50,16 +50,28 @@ def test_environment_configuration_loads_service_account() -> None:
 def test_missing_configuration_names_setting_and_readme_section() -> None:
     with pytest.raises(
         InvalidConfiguration,
-        match=r"GOOGLE_ADS_DEVELOPER_TOKEN.*README.md#google-ads-configuration",
+        match=r"GOOGLE_ADS_CUSTOMER_ID.*README.md#google-ads-configuration",
     ):
         load_config(
             environ={
-                "GOOGLE_ADS_CUSTOMER_ID": "1234567890",
                 "GOOGLE_ADS_CLIENT_ID": "client-id-placeholder",
                 "GOOGLE_ADS_CLIENT_SECRET": "client-secret-placeholder",
                 "GOOGLE_ADS_REFRESH_TOKEN": "refresh-token-placeholder",
             }
         )
+
+
+def test_developer_token_is_optional() -> None:
+    config = load_config(
+        environ={
+            "GOOGLE_ADS_CUSTOMER_ID": "1234567890",
+            "GOOGLE_ADS_CLIENT_ID": "client-id-placeholder",
+            "GOOGLE_ADS_CLIENT_SECRET": "client-secret-placeholder",
+            "GOOGLE_ADS_REFRESH_TOKEN": "refresh-token-placeholder",
+        }
+    )
+
+    assert config.developer_token is None
 
 
 def test_configuration_rejects_conflicting_authentication_shapes() -> None:
